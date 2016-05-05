@@ -54,8 +54,13 @@ class LBRYBot(object):
         self._api_functions = [f for f in self._api.help() if f not in self._restricted_api_functions]
         self._cb = cleverbot.Cleverbot()
 
-        self._test_name, self._slack_token = self.get_conf()
+        f = open('keynes.conf', 'r')
+        self._slack_token = str(f.readline().replace('\n', ''))
+        self._test_name = str(f.readline().replace('\n', ''))
+        f.close()
+
         self.sc = SlackClient(self._slack_token)
+        self.sc.rtm_connect()
         self._fetcher = Autofetcher()
 
         self.channels = {}
@@ -64,13 +69,6 @@ class LBRYBot(object):
 
         self._slackrx = LoopingCall(self._get_messages)
         self._checker = LoopingCall(self._check_lbrynet)
-
-    def get_conf(self):
-        f = open('keynes.conf', 'r')
-        token = f.readline().replace('\n', '')
-        test_file = f.readline().replace('\n', '')
-        f.close()
-        return token, test_file
 
     def setup(self):
         self.sc.rtm_connect()
