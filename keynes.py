@@ -6,12 +6,16 @@ from slackclient import SlackClient
 from jsonrpc.proxy import JSONRPCProxy
 from lbrynet.conf import API_CONNECTION_STRING
 
-from twisted.internet import reactor, defer
+from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
 from twisted.internet import defer
 
 
 class Autofetcher(object):
+    """
+    Download name claims as they occur
+    """
+
     def __init__(self):
         self._api = JSONRPCProxy.from_url(API_CONNECTION_STRING)
         self._checker = LoopingCall(self._check_for_new_claims)
@@ -36,6 +40,10 @@ class Autofetcher(object):
 
 
 class LBRYBot(object):
+    """
+    The stimulus and testing bot for the LBRY slack group
+    """
+
     def __init__(self):
         print 'Starting up'
         self._api = JSONRPCProxy.from_url(API_CONNECTION_STRING)
@@ -45,15 +53,24 @@ class LBRYBot(object):
 
         self._api_functions = [f for f in self._api.help() if f not in self._restricted_api_functions]
         self._cb = cleverbot.Cleverbot()
-        self.sc = SlackClient('xoxb-18962700149-nd9s2Q0FPS866o6mArdqXkbk')
 
+        self._test_name, self._slack_token = self.get_conf()
+        self.sc = SlackClient(self._slack_token)
         self._fetcher = Autofetcher()
 
         self.channels = {}
         self.users = {}
         self.message_queue = []
 
-        self.slackrx = LoopingCall(self._get_messages)
+        self._slackrx = LoopingCall(self._get_messages)
+        self._checker = LoopingCall(self._check_lbrynet)
+
+    def get_conf(self):
+        f = open('keynes.conf', 'r')
+        token = f.readline().replace('\n', '')
+        test_file = f.readline().replace('\n', '')
+        f.close()
+        return token, test_file
 
     def setup(self):
         self.sc.rtm_connect()
@@ -62,7 +79,8 @@ class LBRYBot(object):
         for u in json.loads(self.sc.api_call('users.list'))['members']:
             self.users[u['id']] = u['name']
         self._fetcher.start()
-        self.slackrx.start(2.0)
+        self._slackrx.start(2)
+        self._checker.start(600)
 
     def _send_message(self, channel, msg):
         self.message_queue.reverse()
@@ -81,6 +99,14 @@ class LBRYBot(object):
             self.message_queue.append((channel, msg))
             self.message_queue.reverse()
             self.sc.rtm_connect()
+
+    def _check_lbrynet(self):
+        try:
+            self._api.get({'name': self._test_name})
+            print "Got test file"
+            self._api.delete_lbry_file({'name': self._test_name})
+        except:
+            self._send_message(self.channels['tech-team'], "Failed to get test file")
 
     def _get_messages(self):
         def _handle(message):
